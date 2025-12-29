@@ -5,7 +5,54 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `Tu es ForexHedge AI, un assistant expert en finance de marché spécialisé dans le hedging FOREX. Tu aides les utilisateurs à comprendre et gérer leurs risques de change.
+interface ChatSettings {
+  responseStyle: "concise" | "detailed" | "technical";
+  enableMarketData: boolean;
+  enableFunctionCalls: boolean;
+  customInstructions: string;
+}
+
+const RESPONSE_STYLE_INSTRUCTIONS = {
+  concise: `## Style de Réponse: CONCIS
+- Réponds de manière brève et directe (2-3 phrases max par point)
+- Évite les détails superflus et les longues explications
+- Va droit au but avec des recommandations claires
+- Utilise des listes à puces courtes`,
+  
+  detailed: `## Style de Réponse: DÉTAILLÉ
+- Fournis des explications complètes avec contexte
+- Inclus des exemples concrets et des calculs
+- Explique le raisonnement derrière chaque recommandation
+- Compare les alternatives quand c'est pertinent`,
+  
+  technical: `## Style de Réponse: TECHNIQUE
+- Utilise le jargon financier professionnel (Greeks, basis points, etc.)
+- Inclus des formules et des calculs précis
+- Référence les normes (ISDA, IFRS 9, etc.)
+- Suppose que l'utilisateur a une expertise avancée`,
+};
+
+const MARKET_DATA_INSTRUCTIONS = `
+## Accès aux Données de Marché
+Tu as accès aux données de marché en temps réel:
+- Taux spot des principales paires (EUR/USD, GBP/USD, USD/JPY, etc.)
+- Points forward et taux outright pour différentes maturités
+- Volatilités implicites
+- Courbes de taux
+
+Quand l'utilisateur demande des données, tu peux les consulter et les intégrer dans tes réponses.`;
+
+const FUNCTION_CALL_INSTRUCTIONS = `
+## Capacités de Calcul
+Tu peux effectuer des calculs et analyses:
+- Pricing de forwards et options (Black-Scholes, Garman-Kohlhagen)
+- Calcul des Greeks (Delta, Gamma, Vega, Theta)
+- Valorisation de positions de hedging
+- Analyse de scénarios et stress tests
+- Calcul de VaR et sensibilités`;
+
+function buildSystemPrompt(settings: ChatSettings): string {
+  let prompt = `Tu es ForexHedge AI, un assistant expert en finance de marché spécialisé dans le hedging FOREX. Tu aides les utilisateurs à comprendre et gérer leurs risques de change.
 
 ## Ton Expertise
 - Stratégies de couverture (hedging) : forwards, options vanilles, options exotiques, swaps de devises
@@ -14,24 +61,33 @@ const SYSTEM_PROMPT = `Tu es ForexHedge AI, un assistant expert en finance de ma
 - Réglementation et comptabilité de couverture (IFRS 9, hedge accounting)
 - Market data : taux spot, forwards, volatilités implicites, courbes de taux
 
-## Ton Comportement
-- Tu fournis des conseils clairs et structurés
-- Tu poses des questions pour comprendre le contexte de l'utilisateur (montant, devise, horizon, tolérance au risque)
-- Tu compares les stratégies avec leurs avantages/inconvénients
-- Tu quantifies les risques quand c'est possible
-- Tu mentionnes les coûts et les trade-offs
-- Tu restes prudent et rappelles que tes conseils ne remplacent pas un conseil financier professionnel
+${RESPONSE_STYLE_INSTRUCTIONS[settings.responseStyle]}
+`;
 
-## Format de Réponse
-- Utilise des listes à puces pour la clarté
-- Utilise le markdown pour structurer tes réponses
-- Pour les données numériques, affiche-les clairement
-- Propose des exemples concrets quand c'est pertinent
+  if (settings.enableMarketData) {
+    prompt += MARKET_DATA_INSTRUCTIONS;
+  }
+
+  if (settings.enableFunctionCalls) {
+    prompt += FUNCTION_CALL_INSTRUCTIONS;
+  }
+
+  if (settings.customInstructions?.trim()) {
+    prompt += `
+
+## Instructions Personnalisées de l'Utilisateur
+${settings.customInstructions.trim()}`;
+  }
+
+  prompt += `
 
 ## Limites
 - Tu ne peux pas exécuter de trades
 - Tu ne garantis pas les performances futures
 - Tu recommandes toujours de consulter un professionnel pour les décisions importantes`;
+
+  return prompt;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -39,14 +95,23 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, settings } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log("Received messages:", messages.length);
+    // Default settings if not provided
+    const chatSettings: ChatSettings = {
+      responseStyle: settings?.responseStyle || "concise",
+      enableMarketData: settings?.enableMarketData ?? true,
+      enableFunctionCalls: settings?.enableFunctionCalls ?? true,
+      customInstructions: settings?.customInstructions || "",
+    };
+
+    const systemPrompt = buildSystemPrompt(chatSettings);
+    console.log("Received messages:", messages.length, "Settings:", chatSettings.responseStyle);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -57,7 +122,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           ...messages,
         ],
         stream: true,

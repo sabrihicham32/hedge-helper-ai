@@ -4,6 +4,7 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { MarketDataPanel } from "@/components/MarketDataPanel";
+import { ChatSettingsPanel } from "@/components/ChatSettingsPanel";
 import { Bot, Trash2, TrendingUp, Shield, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -14,7 +15,7 @@ const QUICK_ACTIONS = [
 ];
 
 const Index = () => {
-  const { messages, isLoading, sendMessage, clearMessages } = useForexChat();
+  const { messages, isLoading, sendMessage, clearMessages, settings, setSettings } = useForexChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,17 +37,20 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Expert en couverture de change</p>
             </div>
           </div>
-          {messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearMessages}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Effacer
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <ChatSettingsPanel settings={settings} onSettingsChange={setSettings} />
+            {messages.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearMessages}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Effacer
+              </Button>
+            )}
+          </div>
         </header>
 
         {/* Messages Area */}

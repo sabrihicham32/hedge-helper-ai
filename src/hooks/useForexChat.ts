@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Message } from "@/types/chat";
+import { Message, ChatSettings, DEFAULT_SETTINGS } from "@/types/chat";
 import { toast } from "sonner";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/forex-chat`;
@@ -7,6 +7,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/forex-chat`;
 export function useForexChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<ChatSettings>(DEFAULT_SETTINGS);
 
   const sendMessage = useCallback(async (input: string) => {
     if (!input.trim() || isLoading) return;
@@ -37,7 +38,10 @@ export function useForexChat() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: [...messages, userMessage] }),
+        body: JSON.stringify({ 
+          messages: [...messages, userMessage],
+          settings: settings
+        }),
       });
 
       if (!response.ok) {
@@ -84,7 +88,6 @@ export function useForexChat() {
     } catch (error) {
       console.error("Chat error:", error);
       toast.error(error instanceof Error ? error.message : "Une erreur est survenue");
-      // Remove the failed assistant message if empty
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant" && !last.content) {
@@ -95,11 +98,11 @@ export function useForexChat() {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, settings]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
   }, []);
 
-  return { messages, isLoading, sendMessage, clearMessages };
+  return { messages, isLoading, sendMessage, clearMessages, settings, setSettings };
 }

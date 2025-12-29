@@ -19,3 +19,19 @@ export interface ForwardRate {
   points: number;
   outright: number;
 }
+
+export type ResponseStyle = "concise" | "detailed" | "technical";
+
+export interface ChatSettings {
+  responseStyle: ResponseStyle;
+  enableMarketData: boolean;
+  enableFunctionCalls: boolean;
+  customInstructions: string;
+}
+
+export const DEFAULT_SETTINGS: ChatSettings = {
+  responseStyle: "concise",
+  enableMarketData: true,
+  enableFunctionCalls: true,
+  customInstructions: "",
+};
