@@ -1,0 +1,4 @@
+project_id = "ufoiweqndnoylnfltqay"
+
+[functions.forex-chat]
+verify_jwt = false
