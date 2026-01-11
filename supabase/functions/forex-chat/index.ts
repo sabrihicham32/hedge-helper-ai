@@ -23,6 +23,17 @@ interface MarketData {
   }>;
 }
 
+interface FXExtractionData {
+  amount: number | null;
+  currency: string | null;
+  direction: "receive" | "pay" | null;
+  maturity: string | null;
+  baseCurrency: string | null;
+  currentRate: number | null;
+  Barriere: number | null;
+  hedgeDirection: "upside" | "downside" | null;
+}
+
 const RESPONSE_STYLE_INSTRUCTIONS = {
   concise: `## Style de Réponse: CONCIS
 - Réponds de manière brève et directe (2-3 phrases max par point)
@@ -51,6 +62,86 @@ Tu peux effectuer des calculs et analyses:
 - Valorisation de positions de hedging
 - Analyse de scénarios et stress tests
 - Calcul de VaR et sensibilités`;
+
+const FX_EXTRACTION_INSTRUCTIONS = `
+## MODE EXTRACTION DE DONNÉES FX
+
+IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedging), tu dois:
+
+1. ANALYSER son message et extraire les informations suivantes:
+
+### Champs OBLIGATOIRES:
+- amount (number): montant numérique sans devise (ex: 1000000 pour "1M")
+- currency (string): devise du flux (USD, EUR, GBP, CHF, JPY, CAD, AUD, etc.)
+- direction (string): "receive" (je reçois) ou "pay" (je paie)
+- maturity (string): TOUJOURS en format ANNUALISÉ (ex: "0.5" pour 6 mois, "0.25" pour 3 mois)
+- baseCurrency (string): devise de référence du client (EUR, USD, etc.)
+
+### Champs OPTIONNELS:
+- currentRate (number|null): taux de change currency/baseCurrency - TU DOIS LE CHERCHER via les données de marché
+- Barriere (number|null): niveau de protection souhaité
+- hedgeDirection (string|null): "upside" (hausse) ou "downside" (baisse)
+
+2. RÈGLES DE CONVERSION:
+
+### Montants:
+- "1M", "1 million" → 1000000
+- "500K", "500 mille" → 500000
+- "2,5M" → 2500000
+- "1.5M" → 1500000
+
+### Devises (normalisation):
+- "dollar", "dollars", "$", "USD" → "USD"
+- "euro", "euros", "€", "EUR" → "EUR"
+- "livre", "livres", "£", "GBP" → "GBP"
+- "yen", "¥", "JPY" → "JPY"
+- Si pays mentionné: "France" → baseCurrency = "EUR", "USA" → baseCurrency = "USD", etc.
+
+### Direction:
+- "recevoir", "reçois", "encaisser", "perception" → "receive"
+- "payer", "paie", "décaisser", "verser" → "pay"
+
+### Maturité (TOUJOURS ANNUALISÉE):
+- "dans 6 mois" → "0.5"
+- "dans 3 mois" → "0.25"
+- "dans 1 an" → "1"
+- "dans 18 mois" → "1.5"
+- Pour une date précise: calcule le nombre de jours depuis aujourd'hui et divise par 365
+
+### Direction de couverture:
+- "couvrir à la baisse", "protection baisse", "ne pas descendre" → "downside"
+- "couvrir à la hausse", "protection hausse", "ne pas monter" → "upside"
+
+3. SI UN CHAMP OBLIGATOIRE MANQUE:
+- Tu DOIS demander à l'utilisateur de le fournir
+- Ta question DOIT OBLIGATOIREMENT contenir le symbole "?"
+- Utilise la MÊME LANGUE que l'utilisateur
+- Exemple: "Quelle est votre devise de référence (base currency) ?"
+
+4. POUR LE TAUX ACTUEL (currentRate):
+- Utilise les données de marché fournies pour trouver le taux currency/baseCurrency
+- Format: currency/baseCurrency (ex: USD/EUR si currency=USD et baseCurrency=EUR)
+
+5. QUAND TOUTES LES DONNÉES SONT COMPLÈTES:
+- Génère un JSON valide à la fin de ta réponse
+- Format EXACT à respecter:
+\`\`\`json
+{"amount": 1000000, "currency": "USD", "direction": "receive", "maturity": "0.5", "baseCurrency": "EUR", "currentRate": 0.92, "Barriere": null, "hedgeDirection": "downside"}
+\`\`\`
+
+6. EXEMPLES:
+
+Input: "Je reçois 1M USD dans 6 mois, ma devise principale est EUR"
+Output: Confirme les données et génère:
+\`\`\`json
+{"amount": 1000000, "currency": "USD", "direction": "receive", "maturity": "0.5", "baseCurrency": "EUR", "currentRate": 0.92, "Barriere": null, "hedgeDirection": null}
+\`\`\`
+
+Input: "Je dois payer 500K GBP"
+Output: "Pour compléter votre demande de couverture, j'ai besoin de quelques informations:
+- Quelle est la date d'échéance de ce paiement ?
+- Quelle est votre devise de référence ?"
+`;
 
 async function fetchMarketData(): Promise<MarketData | null> {
   try {
@@ -131,14 +222,38 @@ function buildMarketDataContext(marketData: MarketData): string {
     .map(p => `- ${p.pair}: Spot ${p.spotRate} (Bid: ${p.bid} / Ask: ${p.ask})`)
     .join("\n");
   
+  // Build all cross rates for extraction
+  const crossRates: string[] = [];
+  const currencies = Object.keys(marketData.rates);
+  
+  for (const curr of currencies) {
+    if (curr === "USD") continue;
+    crossRates.push(`- ${curr}/USD: ${(1 / marketData.rates[curr]).toFixed(6)}`);
+    crossRates.push(`- USD/${curr}: ${marketData.rates[curr].toFixed(6)}`);
+  }
+  
+  // Add cross rates between major currencies
+  const majors = ["EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD"];
+  for (const curr1 of majors) {
+    for (const curr2 of majors) {
+      if (curr1 !== curr2 && marketData.rates[curr1] && marketData.rates[curr2]) {
+        crossRates.push(`- ${curr1}/${curr2}: ${(marketData.rates[curr2] / marketData.rates[curr1]).toFixed(6)}`);
+      }
+    }
+  }
+  
   return `
 ## DONNÉES DE MARCHÉ EN TEMPS RÉEL (Source: ExchangeRate API)
 Dernière mise à jour: ${marketData.timestamp}
+Date du jour: ${new Date().toISOString().split('T')[0]}
 
-### Taux Spot Actuels:
+### Taux Spot Principaux:
 ${pairsInfo}
 
-### Autres taux disponibles (base USD):
+### Tous les Taux de Change Disponibles (pour calcul currentRate):
+${crossRates.slice(0, 50).join("\n")}
+
+### Taux bruts (base USD):
 - EUR: ${marketData.rates.EUR}
 - GBP: ${marketData.rates.GBP}
 - JPY: ${marketData.rates.JPY}
@@ -156,8 +271,17 @@ ${pairsInfo}
 - TRY: ${marketData.rates.TRY}
 - BRL: ${marketData.rates.BRL}
 - INR: ${marketData.rates.INR}
+- MAD: ${marketData.rates.MAD || "N/A"}
+- DKK: ${marketData.rates.DKK}
+- PLN: ${marketData.rates.PLN}
+- CZK: ${marketData.rates.CZK}
+- HUF: ${marketData.rates.HUF}
+- RUB: ${marketData.rates.RUB || "N/A"}
 
-IMPORTANT: Utilise UNIQUEMENT ces données réelles pour répondre aux questions sur les taux de change. Ne jamais inventer de taux.`;
+IMPORTANT: 
+- Utilise UNIQUEMENT ces données réelles pour répondre aux questions sur les taux de change.
+- Pour calculer un taux currency/baseCurrency: divise le taux baseCurrency par le taux currency (tous deux par rapport à USD)
+- Exemple: EUR/GBP = rates.GBP / rates.EUR`;
 }
 
 function buildSystemPrompt(settings: ChatSettings, marketDataContext: string | null): string {
@@ -172,6 +296,9 @@ function buildSystemPrompt(settings: ChatSettings, marketDataContext: string | n
 
 ${RESPONSE_STYLE_INSTRUCTIONS[settings.responseStyle]}
 `;
+
+  // Always add FX extraction instructions
+  prompt += FX_EXTRACTION_INSTRUCTIONS;
 
   if (settings.enableMarketData && marketDataContext) {
     prompt += marketDataContext;
