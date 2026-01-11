@@ -1,51 +1,114 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MarketRate, ForwardRate } from "@/types/chat";
 
-// Simulated FX rates - in production, connect to a real market data API
-const BASE_RATES: MarketRate[] = [
-  { pair: "EUR/USD", spotRate: 1.0856, change: 0.0023, changePercent: 0.21, bid: 1.0854, ask: 1.0858, high24h: 1.0892, low24h: 1.0821 },
-  { pair: "GBP/USD", spotRate: 1.2634, change: -0.0041, changePercent: -0.32, bid: 1.2632, ask: 1.2636, high24h: 1.2698, low24h: 1.2589 },
-  { pair: "USD/JPY", spotRate: 157.42, change: 0.68, changePercent: 0.43, bid: 157.40, ask: 157.44, high24h: 157.89, low24h: 156.54 },
-  { pair: "USD/CHF", spotRate: 0.8892, change: -0.0012, changePercent: -0.13, bid: 0.8890, ask: 0.8894, high24h: 0.8923, low24h: 0.8867 },
-  { pair: "EUR/GBP", spotRate: 0.8593, change: 0.0048, changePercent: 0.56, bid: 0.8591, ask: 0.8595, high24h: 0.8612, low24h: 0.8554 },
-  { pair: "AUD/USD", spotRate: 0.6245, change: -0.0018, changePercent: -0.29, bid: 0.6243, ask: 0.6247, high24h: 0.6278, low24h: 0.6212 },
+const CURRENCY_PAIRS = [
+  { base: "EUR", quote: "USD", invert: true },
+  { base: "GBP", quote: "USD", invert: true },
+  { base: "USD", quote: "JPY", invert: false },
+  { base: "USD", quote: "CHF", invert: false },
+  { base: "EUR", quote: "GBP", invert: false },
+  { base: "AUD", quote: "USD", invert: true },
 ];
 
+// Forward points (simulated - in production, get from a forward rates API)
 const BASE_FORWARDS: ForwardRate[] = [
-  { tenor: "1M", points: -12.5, outright: 1.0844 },
-  { tenor: "3M", points: -35.2, outright: 1.0821 },
-  { tenor: "6M", points: -68.4, outright: 1.0788 },
-  { tenor: "1Y", points: -125.8, outright: 1.0730 },
+  { tenor: "1M", points: -12.5, outright: 0 },
+  { tenor: "3M", points: -35.2, outright: 0 },
+  { tenor: "6M", points: -68.4, outright: 0 },
+  { tenor: "1Y", points: -125.8, outright: 0 },
 ];
 
 export function useMarketData() {
-  const [rates, setRates] = useState<MarketRate[]>(BASE_RATES);
+  const [rates, setRates] = useState<MarketRate[]>([]);
   const [forwards, setForwards] = useState<ForwardRate[]>(BASE_FORWARDS);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const previousRates = useRef<Map<string, number>>(new Map());
 
-  // Simulate live updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRates((prev) =>
-        prev.map((rate) => {
-          const variation = (Math.random() - 0.5) * 0.001;
-          const newSpot = rate.spotRate + variation;
-          const newChange = rate.change + variation;
-          return {
-            ...rate,
-            spotRate: parseFloat(newSpot.toFixed(4)),
-            change: parseFloat(newChange.toFixed(4)),
-            changePercent: parseFloat(((newChange / rate.spotRate) * 100).toFixed(2)),
-            bid: parseFloat((newSpot - 0.0002).toFixed(4)),
-            ask: parseFloat((newSpot + 0.0002).toFixed(4)),
-          };
-        })
-      );
+  const fetchRates = async () => {
+    try {
+      const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+      if (!response.ok) throw new Error("Failed to fetch rates");
+      
+      const data = await response.json();
+      const usdRates = data.rates;
+
+      const newRates: MarketRate[] = CURRENCY_PAIRS.map(({ base, quote, invert }) => {
+        let pair: string;
+        let spotRate: number;
+
+        if (invert) {
+          // For pairs like EUR/USD, we need 1/rate since API gives USD/EUR
+          pair = `${base}/${quote}`;
+          spotRate = 1 / usdRates[base];
+        } else if (base === "EUR" && quote === "GBP") {
+          // Cross rate: EUR/GBP = USD/GBP / USD/EUR = (1/GBP) / (1/EUR)
+          pair = `${base}/${quote}`;
+          spotRate = usdRates[quote] / usdRates[base];
+        } else {
+          pair = `${base}/${quote}`;
+          spotRate = usdRates[quote];
+        }
+
+        spotRate = parseFloat(spotRate.toFixed(4));
+
+        // Calculate change from previous rate
+        const prevRate = previousRates.current.get(pair) || spotRate;
+        const change = parseFloat((spotRate - prevRate).toFixed(4));
+        const changePercent = parseFloat(((change / prevRate) * 100).toFixed(2));
+
+        // Store current rate for next comparison
+        previousRates.current.set(pair, spotRate);
+
+        // Simulate bid/ask spread (typical for major pairs)
+        const spread = spotRate < 10 ? 0.0002 : 0.02;
+        const bid = parseFloat((spotRate - spread / 2).toFixed(4));
+        const ask = parseFloat((spotRate + spread / 2).toFixed(4));
+
+        // Simulate 24h high/low (±0.5% from current)
+        const variation = spotRate * 0.005;
+        const high24h = parseFloat((spotRate + variation).toFixed(4));
+        const low24h = parseFloat((spotRate - variation).toFixed(4));
+
+        return {
+          pair,
+          spotRate,
+          change,
+          changePercent,
+          bid,
+          ask,
+          high24h,
+          low24h,
+        };
+      });
+
+      // Update forward outrights based on EUR/USD spot
+      const eurusdSpot = newRates.find(r => r.pair === "EUR/USD")?.spotRate || 1.0856;
+      const updatedForwards = BASE_FORWARDS.map(f => ({
+        ...f,
+        outright: parseFloat((eurusdSpot + f.points / 10000).toFixed(4)),
+      }));
+
+      setRates(newRates);
+      setForwards(updatedForwards);
       setLastUpdate(new Date());
-    }, 3000);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch rates");
+      console.error("Error fetching exchange rates:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
+    fetchRates();
+    
+    // Refresh every 30 seconds (API has rate limits)
+    const interval = setInterval(fetchRates, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  return { rates, forwards, lastUpdate };
+  return { rates, forwards, lastUpdate, isLoading, error, refetch: fetchRates };
 }
