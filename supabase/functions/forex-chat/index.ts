@@ -12,6 +12,17 @@ interface ChatSettings {
   customInstructions: string;
 }
 
+interface MarketData {
+  rates: Record<string, number>;
+  timestamp: string;
+  pairs: Array<{
+    pair: string;
+    spotRate: number;
+    bid: number;
+    ask: number;
+  }>;
+}
+
 const RESPONSE_STYLE_INSTRUCTIONS = {
   concise: `## Style de Réponse: CONCIS
 - Réponds de manière brève et directe (2-3 phrases max par point)
@@ -32,16 +43,6 @@ const RESPONSE_STYLE_INSTRUCTIONS = {
 - Suppose que l'utilisateur a une expertise avancée`,
 };
 
-const MARKET_DATA_INSTRUCTIONS = `
-## Accès aux Données de Marché
-Tu as accès aux données de marché en temps réel:
-- Taux spot des principales paires (EUR/USD, GBP/USD, USD/JPY, etc.)
-- Points forward et taux outright pour différentes maturités
-- Volatilités implicites
-- Courbes de taux
-
-Quand l'utilisateur demande des données, tu peux les consulter et les intégrer dans tes réponses.`;
-
 const FUNCTION_CALL_INSTRUCTIONS = `
 ## Capacités de Calcul
 Tu peux effectuer des calculs et analyses:
@@ -51,7 +52,115 @@ Tu peux effectuer des calculs et analyses:
 - Analyse de scénarios et stress tests
 - Calcul de VaR et sensibilités`;
 
-function buildSystemPrompt(settings: ChatSettings): string {
+async function fetchMarketData(): Promise<MarketData | null> {
+  try {
+    const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+    if (!response.ok) {
+      console.error("Failed to fetch market data:", response.status);
+      return null;
+    }
+    
+    const data = await response.json();
+    const rates = data.rates;
+    
+    // Calculate common FX pairs
+    const pairs = [
+      { 
+        pair: "EUR/USD", 
+        spotRate: parseFloat((1 / rates.EUR).toFixed(4)),
+        bid: parseFloat((1 / rates.EUR - 0.0001).toFixed(4)),
+        ask: parseFloat((1 / rates.EUR + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "GBP/USD", 
+        spotRate: parseFloat((1 / rates.GBP).toFixed(4)),
+        bid: parseFloat((1 / rates.GBP - 0.0001).toFixed(4)),
+        ask: parseFloat((1 / rates.GBP + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "USD/JPY", 
+        spotRate: parseFloat(rates.JPY.toFixed(2)),
+        bid: parseFloat((rates.JPY - 0.01).toFixed(2)),
+        ask: parseFloat((rates.JPY + 0.01).toFixed(2)),
+      },
+      { 
+        pair: "USD/CHF", 
+        spotRate: parseFloat(rates.CHF.toFixed(4)),
+        bid: parseFloat((rates.CHF - 0.0001).toFixed(4)),
+        ask: parseFloat((rates.CHF + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "EUR/GBP", 
+        spotRate: parseFloat((rates.GBP / rates.EUR).toFixed(4)),
+        bid: parseFloat((rates.GBP / rates.EUR - 0.0001).toFixed(4)),
+        ask: parseFloat((rates.GBP / rates.EUR + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "AUD/USD", 
+        spotRate: parseFloat((1 / rates.AUD).toFixed(4)),
+        bid: parseFloat((1 / rates.AUD - 0.0001).toFixed(4)),
+        ask: parseFloat((1 / rates.AUD + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "USD/CAD", 
+        spotRate: parseFloat(rates.CAD.toFixed(4)),
+        bid: parseFloat((rates.CAD - 0.0001).toFixed(4)),
+        ask: parseFloat((rates.CAD + 0.0001).toFixed(4)),
+      },
+      { 
+        pair: "NZD/USD", 
+        spotRate: parseFloat((1 / rates.NZD).toFixed(4)),
+        bid: parseFloat((1 / rates.NZD - 0.0001).toFixed(4)),
+        ask: parseFloat((1 / rates.NZD + 0.0001).toFixed(4)),
+      },
+    ];
+    
+    return {
+      rates,
+      timestamp: new Date().toISOString(),
+      pairs,
+    };
+  } catch (error) {
+    console.error("Error fetching market data:", error);
+    return null;
+  }
+}
+
+function buildMarketDataContext(marketData: MarketData): string {
+  const pairsInfo = marketData.pairs
+    .map(p => `- ${p.pair}: Spot ${p.spotRate} (Bid: ${p.bid} / Ask: ${p.ask})`)
+    .join("\n");
+  
+  return `
+## DONNÉES DE MARCHÉ EN TEMPS RÉEL (Source: ExchangeRate API)
+Dernière mise à jour: ${marketData.timestamp}
+
+### Taux Spot Actuels:
+${pairsInfo}
+
+### Autres taux disponibles (base USD):
+- EUR: ${marketData.rates.EUR}
+- GBP: ${marketData.rates.GBP}
+- JPY: ${marketData.rates.JPY}
+- CHF: ${marketData.rates.CHF}
+- CAD: ${marketData.rates.CAD}
+- AUD: ${marketData.rates.AUD}
+- NZD: ${marketData.rates.NZD}
+- CNY: ${marketData.rates.CNY}
+- HKD: ${marketData.rates.HKD}
+- SGD: ${marketData.rates.SGD}
+- SEK: ${marketData.rates.SEK}
+- NOK: ${marketData.rates.NOK}
+- MXN: ${marketData.rates.MXN}
+- ZAR: ${marketData.rates.ZAR}
+- TRY: ${marketData.rates.TRY}
+- BRL: ${marketData.rates.BRL}
+- INR: ${marketData.rates.INR}
+
+IMPORTANT: Utilise UNIQUEMENT ces données réelles pour répondre aux questions sur les taux de change. Ne jamais inventer de taux.`;
+}
+
+function buildSystemPrompt(settings: ChatSettings, marketDataContext: string | null): string {
   let prompt = `Tu es ForexHedge AI, un assistant expert en finance de marché spécialisé dans le hedging FOREX. Tu aides les utilisateurs à comprendre et gérer leurs risques de change.
 
 ## Ton Expertise
@@ -64,8 +173,8 @@ function buildSystemPrompt(settings: ChatSettings): string {
 ${RESPONSE_STYLE_INSTRUCTIONS[settings.responseStyle]}
 `;
 
-  if (settings.enableMarketData) {
-    prompt += MARKET_DATA_INSTRUCTIONS;
+  if (settings.enableMarketData && marketDataContext) {
+    prompt += marketDataContext;
   }
 
   if (settings.enableFunctionCalls) {
@@ -84,7 +193,8 @@ ${settings.customInstructions.trim()}`;
 ## Limites
 - Tu ne peux pas exécuter de trades
 - Tu ne garantis pas les performances futures
-- Tu recommandes toujours de consulter un professionnel pour les décisions importantes`;
+- Tu recommandes toujours de consulter un professionnel pour les décisions importantes
+- IMPORTANT: Quand tu donnes des taux de change, utilise UNIQUEMENT les données réelles fournies ci-dessus. Ne jamais inventer de taux.`;
 
   return prompt;
 }
@@ -110,8 +220,20 @@ serve(async (req) => {
       customInstructions: settings?.customInstructions || "",
     };
 
-    const systemPrompt = buildSystemPrompt(chatSettings);
-    console.log("Received messages:", messages.length, "Settings:", chatSettings.responseStyle);
+    // Fetch real market data if enabled
+    let marketDataContext: string | null = null;
+    if (chatSettings.enableMarketData) {
+      const marketData = await fetchMarketData();
+      if (marketData) {
+        marketDataContext = buildMarketDataContext(marketData);
+        console.log("Market data fetched successfully");
+      } else {
+        console.warn("Could not fetch market data");
+      }
+    }
+
+    const systemPrompt = buildSystemPrompt(chatSettings, marketDataContext);
+    console.log("Received messages:", messages.length, "Settings:", chatSettings.responseStyle, "MarketData:", !!marketDataContext);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
