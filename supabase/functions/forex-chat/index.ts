@@ -10,6 +10,7 @@ interface ChatSettings {
   enableMarketData: boolean;
   enableFunctionCalls: boolean;
   customInstructions: string;
+  fxDisplayMode: "card" | "json";
 }
 
 interface MarketData {
@@ -21,6 +22,11 @@ interface MarketData {
     bid: number;
     ask: number;
   }>;
+}
+
+interface PerplexitySearchResult {
+  content: string;
+  citations: string[];
 }
 
 interface FXExtractionData {
@@ -222,7 +228,55 @@ async function fetchMarketData(): Promise<MarketData | null> {
   }
 }
 
-function buildMarketDataContext(marketData: MarketData): string {
+// Search for additional market data using Perplexity
+async function searchMarketData(query: string): Promise<PerplexitySearchResult | null> {
+  const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
+  
+  if (!PERPLEXITY_API_KEY) {
+    console.log("Perplexity API key not configured, skipping web search");
+    return null;
+  }
+
+  try {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are a financial market data expert. Provide precise, current market data including FX rates, forward points, volatility, and any relevant financial metrics. Be concise and factual. Always cite your sources."
+          },
+          { 
+            role: "user", 
+            content: query 
+          }
+        ],
+        search_recency_filter: "day",
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Perplexity API error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices?.[0]?.message?.content || "",
+      citations: data.citations || [],
+    };
+  } catch (error) {
+    console.error("Error calling Perplexity API:", error);
+    return null;
+  }
+}
+
+function buildMarketDataContext(marketData: MarketData, perplexityData: PerplexitySearchResult | null): string {
   const pairsInfo = marketData.pairs
     .map(p => `- ${p.pair}: Spot ${p.spotRate} (Bid: ${p.bid} / Ask: ${p.ask})`)
     .join("\n");
@@ -245,6 +299,16 @@ function buildMarketDataContext(marketData: MarketData): string {
         crossRates.push(`- ${curr1}/${curr2}: ${(marketData.rates[curr2] / marketData.rates[curr1]).toFixed(6)}`);
       }
     }
+  }
+
+  let additionalMarketInfo = "";
+  if (perplexityData?.content) {
+    additionalMarketInfo = `
+
+## DONNÉES DE MARCHÉ ENRICHIES (Source: Recherche Web)
+${perplexityData.content}
+
+Sources: ${perplexityData.citations.slice(0, 3).join(", ")}`;
   }
   
   return `
@@ -282,6 +346,7 @@ ${crossRates.slice(0, 50).join("\n")}
 - CZK: ${marketData.rates.CZK}
 - HUF: ${marketData.rates.HUF}
 - RUB: ${marketData.rates.RUB || "N/A"}
+${additionalMarketInfo}
 
 IMPORTANT: 
 - Utilise UNIQUEMENT ces données réelles pour répondre aux questions sur les taux de change.
@@ -350,15 +415,30 @@ serve(async (req) => {
       enableMarketData: settings?.enableMarketData ?? true,
       enableFunctionCalls: settings?.enableFunctionCalls ?? true,
       customInstructions: settings?.customInstructions || "",
+      fxDisplayMode: settings?.fxDisplayMode || "card",
     };
 
     // Fetch real market data if enabled
     let marketDataContext: string | null = null;
     if (chatSettings.enableMarketData) {
+      // Fetch basic exchange rates
       const marketData = await fetchMarketData();
+      
+      // Extract last user message for context-aware search
+      const lastUserMessage = messages.filter((m: {role: string}) => m.role === "user").pop()?.content || "";
+      
+      // Search for additional market data using Perplexity
+      let perplexityData: PerplexitySearchResult | null = null;
+      if (lastUserMessage.toLowerCase().includes("forward") || 
+          lastUserMessage.toLowerCase().includes("volatil") ||
+          lastUserMessage.toLowerCase().includes("option") ||
+          lastUserMessage.toLowerCase().includes("swap")) {
+        perplexityData = await searchMarketData(`Current FX market data for ${lastUserMessage.slice(0, 200)}`);
+      }
+      
       if (marketData) {
-        marketDataContext = buildMarketDataContext(marketData);
-        console.log("Market data fetched successfully");
+        marketDataContext = buildMarketDataContext(marketData, perplexityData);
+        console.log("Market data fetched successfully", perplexityData ? "with Perplexity enrichment" : "");
       } else {
         console.warn("Could not fetch market data");
       }

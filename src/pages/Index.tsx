@@ -5,7 +5,7 @@ import { ChatInput } from "@/components/ChatInput";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { MarketDataPanel } from "@/components/MarketDataPanel";
 import { ChatSettingsPanel } from "@/components/ChatSettingsPanel";
-import { Bot, Trash2, TrendingUp, Shield, BarChart3 } from "lucide-react";
+import { Bot, Trash2, TrendingUp, Shield, BarChart3, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const QUICK_ACTIONS = [
@@ -13,6 +13,13 @@ const QUICK_ACTIONS = [
   { icon: TrendingUp, label: "Forwards vs Options", prompt: "Compare les forwards et les options pour couvrir une exposition de change. Quels sont les avantages et inconvénients de chaque instrument ?" },
   { icon: BarChart3, label: "Analyser mon risque", prompt: "Comment puis-je évaluer mon exposition au risque de change ? Quels sont les indicateurs clés à surveiller ?" },
 ];
+
+const STRATEGY_PROMPT = `Je souhaite initier une nouvelle stratégie de couverture de change. Peux-tu m'aider à définir les paramètres ? J'ai besoin de te donner :
+- Le montant à couvrir
+- La devise concernée
+- Si je dois payer ou recevoir cette devise
+- La date d'échéance
+- Ma devise de référence`;
 
 const Index = () => {
   const { messages, isLoading, sendMessage, clearMessages, settings, setSettings } = useForexChat();
@@ -87,7 +94,7 @@ const Index = () => {
           ) : (
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((message, index) => (
-                <ChatMessage key={index} message={message} />
+                <ChatMessage key={index} message={message} fxDisplayMode={settings.fxDisplayMode} />
               ))}
               {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <TypingIndicator />
@@ -99,7 +106,17 @@ const Index = () => {
 
         {/* Input Area */}
         <div className="px-6 py-4 border-t border-border bg-card/50">
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto space-y-3">
+            <div className="flex justify-center">
+              <Button
+                onClick={() => sendMessage(STRATEGY_PROMPT)}
+                disabled={isLoading}
+                className="gap-2 bg-gradient-to-r from-primary to-accent hover:opacity-90"
+              >
+                <Rocket className="h-4 w-4" />
+                Initier une stratégie
+              </Button>
+            </div>
             <ChatInput onSend={sendMessage} isLoading={isLoading} />
           </div>
         </div>

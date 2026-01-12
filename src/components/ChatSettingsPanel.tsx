@@ -1,9 +1,9 @@
-import { Settings, Database, Zap, MessageSquare } from "lucide-react";
+import { Settings, Database, Zap, MessageSquare, LayoutGrid, Code } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ChatSettings, ResponseStyle } from "@/types/chat";
+import { ChatSettings, ResponseStyle, FXDisplayMode } from "@/types/chat";
 import {
   Sheet,
   SheetContent,
@@ -23,6 +23,11 @@ const RESPONSE_STYLES: { value: ResponseStyle; label: string; description: strin
   { value: "concise", label: "Concis", description: "Réponses brèves et directes" },
   { value: "detailed", label: "Détaillé", description: "Explications complètes" },
   { value: "technical", label: "Technique", description: "Jargon financier avancé" },
+];
+
+const FX_DISPLAY_MODES: { value: FXDisplayMode; label: string; description: string; icon: typeof LayoutGrid }[] = [
+  { value: "card", label: "Carte visuelle", description: "Affichage graphique structuré", icon: LayoutGrid },
+  { value: "json", label: "JSON", description: "Format brut pour développeurs", icon: Code },
 ];
 
 export function ChatSettingsPanel({ settings, onSettingsChange }: ChatSettingsPanelProps) {
@@ -123,6 +128,35 @@ export function ChatSettingsPanel({ settings, onSettingsChange }: ChatSettingsPa
                 onCheckedChange={(checked) => updateSetting("enableFunctionCalls", checked)}
               />
             </div>
+          </div>
+
+          {/* FX Data Display Mode */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4 text-primary" />
+              <Label className="text-sm font-medium">Affichage des données FX</Label>
+            </div>
+            <RadioGroup
+              value={settings.fxDisplayMode}
+              onValueChange={(value) => updateSetting("fxDisplayMode", value as FXDisplayMode)}
+              className="grid grid-cols-2 gap-2"
+            >
+              {FX_DISPLAY_MODES.map((mode) => (
+                <div
+                  key={mode.value}
+                  className="flex items-center space-x-3 rounded-lg border border-border p-3 hover:bg-secondary/50 transition-colors"
+                >
+                  <RadioGroupItem value={mode.value} id={`fx-${mode.value}`} />
+                  <div className="flex-1">
+                    <Label htmlFor={`fx-${mode.value}`} className="font-medium cursor-pointer flex items-center gap-2">
+                      <mode.icon className="h-4 w-4" />
+                      {mode.label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">{mode.description}</p>
+                  </div>
+                </div>
+              ))}
+            </RadioGroup>
           </div>
 
           {/* Custom Instructions */}

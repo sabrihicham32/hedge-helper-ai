@@ -22,11 +22,14 @@ export interface ForwardRate {
 
 export type ResponseStyle = "concise" | "detailed" | "technical";
 
+export type FXDisplayMode = "card" | "json";
+
 export interface ChatSettings {
   responseStyle: ResponseStyle;
   enableMarketData: boolean;
   enableFunctionCalls: boolean;
   customInstructions: string;
+  fxDisplayMode: FXDisplayMode;
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -34,6 +37,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   enableMarketData: true,
   enableFunctionCalls: true,
   customInstructions: "",
+  fxDisplayMode: "card",
 };
 
 // FX Strategy Extraction Data
