@@ -63,8 +63,14 @@ Tu peux effectuer des calculs et analyses:
 - Analyse de scénarios et stress tests
 - Calcul de VaR et sensibilités`;
 
+function getTodayDate(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
 const FX_EXTRACTION_INSTRUCTIONS = `
 ## MODE EXTRACTION DE DONNÉES FX
+
+**DATE DU JOUR: ${getTodayDate()}** - Utilise cette date pour calculer le time to maturity.
 
 IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedging), tu dois:
 
@@ -74,7 +80,7 @@ IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedg
 - amount (number): montant numérique sans devise (ex: 1000000 pour "1M")
 - currency (string): devise du flux (USD, EUR, GBP, CHF, JPY, CAD, AUD, etc.)
 - direction (string): "receive" (je reçois) ou "pay" (je paie)
-- maturity (string): TOUJOURS en format ANNUALISÉ (ex: "0.5" pour 6 mois, "0.25" pour 3 mois)
+- maturity (number): TOUJOURS en format ANNUALISÉ décimal (ex: 0.5 pour 6 mois, 0.25 pour 3 mois)
 - baseCurrency (string): devise de référence du client (EUR, USD, etc.)
 
 ### Champs OPTIONNELS:
@@ -101,12 +107,13 @@ IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedg
 - "recevoir", "reçois", "encaisser", "perception" → "receive"
 - "payer", "paie", "décaisser", "verser" → "pay"
 
-### Maturité (TOUJOURS ANNUALISÉE):
-- "dans 6 mois" → "0.5"
-- "dans 3 mois" → "0.25"
-- "dans 1 an" → "1"
-- "dans 18 mois" → "1.5"
-- Pour une date précise: calcule le nombre de jours depuis aujourd'hui et divise par 365
+### Maturité (CALCUL PRÉCIS avec la date du jour ${getTodayDate()}):
+- "dans 6 mois" → 0.5
+- "dans 3 mois" → 0.25
+- "dans 1 an" → 1.0
+- "dans 18 mois" → 1.5
+- Pour une DATE PRÉCISE: calcule (dateÉchéance - dateAujourdhui) / 365
+  Exemple: Si aujourd'hui = ${getTodayDate()} et échéance = 2026-07-12, alors maturity = (181 jours) / 365 = 0.496
 
 ### Direction de couverture:
 - "couvrir à la baisse", "protection baisse", "ne pas descendre" → "downside"
@@ -121,26 +128,24 @@ IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedg
 4. POUR LE TAUX ACTUEL (currentRate):
 - Utilise les données de marché fournies pour trouver le taux currency/baseCurrency
 - Format: currency/baseCurrency (ex: USD/EUR si currency=USD et baseCurrency=EUR)
+- OBLIGATOIRE: Tu dois toujours chercher ce taux dans les données fournies
 
 5. QUAND TOUTES LES DONNÉES SONT COMPLÈTES:
-- Génère un JSON valide à la fin de ta réponse
-- Format EXACT à respecter:
-\`\`\`json
-{"amount": 1000000, "currency": "USD", "direction": "receive", "maturity": "0.5", "baseCurrency": "EUR", "currentRate": 0.92, "Barriere": null, "hedgeDirection": "downside"}
-\`\`\`
+- Génère le JSON à la TOUTE FIN de ta réponse
+- NE PAS utiliser de blocs de code markdown (\`\`\`)
+- Format EXACT - commence par FX_DATA: suivi du JSON sur UNE SEULE LIGNE:
+
+FX_DATA:{"amount":1000000,"currency":"USD","direction":"receive","maturity":0.5,"baseCurrency":"EUR","currentRate":0.92,"Barriere":null,"hedgeDirection":"downside"}
 
 6. EXEMPLES:
 
 Input: "Je reçois 1M USD dans 6 mois, ma devise principale est EUR"
-Output: Confirme les données et génère:
-\`\`\`json
-{"amount": 1000000, "currency": "USD", "direction": "receive", "maturity": "0.5", "baseCurrency": "EUR", "currentRate": 0.92, "Barriere": null, "hedgeDirection": null}
-\`\`\`
+Output: Confirme les données et termine par:
+FX_DATA:{"amount":1000000,"currency":"USD","direction":"receive","maturity":0.5,"baseCurrency":"EUR","currentRate":0.92,"Barriere":null,"hedgeDirection":null}
 
-Input: "Je dois payer 500K GBP"
-Output: "Pour compléter votre demande de couverture, j'ai besoin de quelques informations:
-- Quelle est la date d'échéance de ce paiement ?
-- Quelle est votre devise de référence ?"
+Input: "Je dois payer 500K GBP le 15 juillet 2026"
+Calcul: Du ${getTodayDate()} au 2026-07-15 = X jours, maturity = X/365
+Output: Demande la devise de base, puis génère le JSON avec la maturity calculée.
 `;
 
 async function fetchMarketData(): Promise<MarketData | null> {
@@ -245,7 +250,7 @@ function buildMarketDataContext(marketData: MarketData): string {
   return `
 ## DONNÉES DE MARCHÉ EN TEMPS RÉEL (Source: ExchangeRate API)
 Dernière mise à jour: ${marketData.timestamp}
-Date du jour: ${new Date().toISOString().split('T')[0]}
+**DATE DU JOUR: ${getTodayDate()}** - Utilise cette date pour tous les calculs de maturité.
 
 ### Taux Spot Principaux:
 ${pairsInfo}

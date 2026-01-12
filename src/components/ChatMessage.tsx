@@ -1,7 +1,9 @@
 import { cn } from "@/lib/utils";
-import { Message } from "@/types/chat";
+import { Message, parseFXExtractionFromResponse } from "@/types/chat";
 import { Bot, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { FXDataCard } from "./FXDataCard";
+import { useMemo } from "react";
 
 interface ChatMessageProps {
   message: Message;
@@ -9,6 +11,13 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
+
+  // Parse FX data from assistant messages
+  const { fxData, cleanContent } = useMemo(() => {
+    if (isUser) return { fxData: null, cleanContent: message.content };
+    const result = parseFXExtractionFromResponse(message.content);
+    return { fxData: result.data, cleanContent: result.cleanContent };
+  }, [message.content, isUser]);
 
   return (
     <div
@@ -69,8 +78,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 ),
               }}
             >
-              {message.content}
+              {cleanContent}
             </ReactMarkdown>
+            
+            {/* Display FX Data Card if extraction was successful */}
+            {fxData && <FXDataCard data={fxData} />}
           </div>
         )}
       </div>
