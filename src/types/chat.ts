@@ -49,13 +49,12 @@ export interface FXExtractionData {
 }
 
 // Helper to parse FX extraction JSON from assistant response
-export function parseFXExtractionFromResponse(content: string): FXExtractionData | null {
+export function parseFXExtractionFromResponse(content: string): { data: FXExtractionData | null; cleanContent: string } {
   try {
-    // Look for JSON block in the response
-    const jsonMatch = content.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[1]);
-      // Validate it has the expected structure
+    // Look for FX_DATA: prefix format (new format without markdown)
+    const fxDataMatch = content.match(/FX_DATA:\s*(\{[^}]+\})/);
+    if (fxDataMatch) {
+      const parsed = JSON.parse(fxDataMatch[1]);
       if (
         'amount' in parsed &&
         'currency' in parsed &&
@@ -63,20 +62,39 @@ export function parseFXExtractionFromResponse(content: string): FXExtractionData
         'maturity' in parsed &&
         'baseCurrency' in parsed
       ) {
-        return parsed as FXExtractionData;
+        // Remove the FX_DATA line from content
+        const cleanContent = content.replace(/\n?FX_DATA:\s*\{[^}]+\}/, '').trim();
+        return { data: parsed as FXExtractionData, cleanContent };
+      }
+    }
+
+    // Fallback: Look for JSON block in markdown format
+    const jsonMatch = content.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      if (
+        'amount' in parsed &&
+        'currency' in parsed &&
+        'direction' in parsed &&
+        'maturity' in parsed &&
+        'baseCurrency' in parsed
+      ) {
+        const cleanContent = content.replace(/```json\s*\{[\s\S]*?\}\s*```/, '').trim();
+        return { data: parsed as FXExtractionData, cleanContent };
       }
     }
     
-    // Also try to find inline JSON
+    // Fallback: Try to find inline JSON
     const inlineMatch = content.match(/\{"amount":\s*\d+[\s\S]*?"hedgeDirection":\s*(?:"[^"]*"|null)\}/);
     if (inlineMatch) {
       const parsed = JSON.parse(inlineMatch[0]);
-      return parsed as FXExtractionData;
+      const cleanContent = content.replace(inlineMatch[0], '').trim();
+      return { data: parsed as FXExtractionData, cleanContent };
     }
     
-    return null;
+    return { data: null, cleanContent: content };
   } catch (error) {
     console.error("Failed to parse FX extraction:", error);
-    return null;
+    return { data: null, cleanContent: content };
   }
 }
