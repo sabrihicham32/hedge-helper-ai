@@ -11,6 +11,7 @@ interface ChatSettings {
   enableFunctionCalls: boolean;
   customInstructions: string;
   fxDisplayMode: "card" | "json";
+  assetClass: "forex" | "commodities";
 }
 
 interface MarketData {
@@ -121,9 +122,12 @@ IMPORTANT: Quand l'utilisateur exprime une demande de couverture de change (hedg
 - Pour une DATE PRÉCISE: calcule (dateÉchéance - dateAujourdhui) / 365
   Exemple: Si aujourd'hui = ${getTodayDate()} et échéance = 2026-07-12, alors maturity = (181 jours) / 365 = 0.496
 
-### Direction de couverture:
-- "couvrir à la baisse", "protection baisse", "ne pas descendre" → "downside"
-- "couvrir à la hausse", "protection hausse", "ne pas monter" → "upside"
+### Direction de couverture (hedgeDirection):
+- "couvrir à la baisse", "protection baisse", "ne pas descendre", "plancher" → "downside"
+- "couvrir à la hausse", "protection hausse", "ne pas monter", "plafond" → "upside"
+- IMPORTANT: Si tu déduis hedgeDirection à partir du contexte mais que ce n'est pas explicitement mentionné, 
+  tu DOIS confirmer avec l'utilisateur. Par exemple:
+  "Je comprends que vous souhaitez une protection contre la baisse (downside). Pouvez-vous confirmer ?"
 
 3. SI UN CHAMP OBLIGATOIRE MANQUE:
 - Tu DOIS demander à l'utilisateur de le fournir
@@ -152,6 +156,54 @@ FX_DATA:{"amount":1000000,"currency":"USD","direction":"receive","maturity":0.5,
 Input: "Je dois payer 500K GBP le 15 juillet 2026"
 Calcul: Du ${getTodayDate()} au 2026-07-15 = X jours, maturity = X/365
 Output: Demande la devise de base, puis génère le JSON avec la maturity calculée.
+`;
+
+const COMMODITIES_SYSTEM_PROMPT = `Tu es CommodityRisk AI, un assistant expert en Risk Management dans le domaine des MATIÈRES PREMIÈRES (Commodities). Tu aides les utilisateurs à comprendre et gérer leurs risques liés aux commodities.
+
+## Ton Expertise
+- **Matières premières énergétiques**: pétrole brut (Brent, WTI), gaz naturel, charbon, électricité
+- **Métaux**: or, argent, cuivre, aluminium, zinc, nickel, platine, palladium
+- **Produits agricoles**: blé, maïs, soja, café, cacao, sucre, coton
+- **Stratégies de couverture**: forwards, futures, swaps, options sur commodities
+- **Analyse des risques**: exposition prix, risque de base, risque de volume, risque de contrepartie
+- **Marchés**: LME (métaux), NYMEX/ICE (énergie), CBOT/CME (agricoles)
+- **Réglementation**: EMIR, Dodd-Frank, MiFID II pour les dérivés commodities
+
+## Contexte Important
+- Tu comprends que "commodities" = matières premières
+- Tu peux discuter des stratégies de hedging similaires au forex mais adaptées aux commodities
+- Tu analyses les positions spot, forwards, futures et options
+- Tu calcules les Greeks pour les options commodities
+- Tu connais les particularités: contango, backwardation, roll yield, basis risk`;
+
+const COMMODITIES_EXTRACTION_INSTRUCTIONS = `
+## MODE EXTRACTION DE DONNÉES COMMODITIES
+
+**DATE DU JOUR: ${getTodayDate()}** - Utilise cette date pour calculer le time to maturity.
+
+IMPORTANT: Quand l'utilisateur exprime une demande de couverture de commodities, tu dois:
+
+1. ANALYSER son message et extraire les informations suivantes:
+
+### Champs OBLIGATOIRES:
+- amount (number): quantité (ex: 1000 pour "1000 barils" ou "1000 tonnes")
+- currency (string): la COMMODITY concernée (OIL, GAS, GOLD, SILVER, COPPER, WHEAT, CORN, etc.)
+- direction (string): "receive" (je vends/produis) ou "pay" (j'achète/consomme)
+- maturity (number): TOUJOURS en format ANNUALISÉ décimal
+- baseCurrency (string): devise de cotation (USD, EUR, etc.)
+
+### Champs OPTIONNELS:
+- currentRate (number|null): prix actuel de la commodity
+- Barriere (number|null): niveau de prix de protection souhaité
+- hedgeDirection (string|null): "upside" (protection contre hausse des prix) ou "downside" (protection contre baisse des prix)
+
+### Direction de couverture (hedgeDirection):
+- Producteur/Vendeur → généralement "downside" (protection contre la baisse des prix)
+- Acheteur/Consommateur → généralement "upside" (protection contre la hausse des prix)
+- IMPORTANT: Confirme toujours avec l'utilisateur si déduit du contexte
+
+2. FORMAT DE SORTIE:
+FX_DATA:{"amount":1000,"currency":"OIL","direction":"pay","maturity":0.5,"baseCurrency":"USD","currentRate":75.50,"Barriere":null,"hedgeDirection":"upside"}
 `;
 
 async function fetchMarketData(): Promise<MarketData | null> {
@@ -355,7 +407,10 @@ IMPORTANT:
 }
 
 function buildSystemPrompt(settings: ChatSettings, marketDataContext: string | null): string {
-  let prompt = `Tu es ForexHedge AI, un assistant expert en finance de marché spécialisé dans le hedging FOREX. Tu aides les utilisateurs à comprendre et gérer leurs risques de change.
+  const isForex = settings.assetClass === "forex";
+  
+  let prompt = isForex 
+    ? `Tu es ForexHedge AI, un assistant expert en finance de marché spécialisé dans le hedging FOREX. Tu aides les utilisateurs à comprendre et gérer leurs risques de change.
 
 ## Ton Expertise
 - Stratégies de couverture (hedging) : forwards, options vanilles, options exotiques, swaps de devises
@@ -365,10 +420,14 @@ function buildSystemPrompt(settings: ChatSettings, marketDataContext: string | n
 - Market data : taux spot, forwards, volatilités implicites, courbes de taux
 
 ${RESPONSE_STYLE_INSTRUCTIONS[settings.responseStyle]}
+`
+    : `${COMMODITIES_SYSTEM_PROMPT}
+
+${RESPONSE_STYLE_INSTRUCTIONS[settings.responseStyle]}
 `;
 
-  // Always add FX extraction instructions
-  prompt += FX_EXTRACTION_INSTRUCTIONS;
+  // Add extraction instructions based on asset class
+  prompt += isForex ? FX_EXTRACTION_INSTRUCTIONS : COMMODITIES_EXTRACTION_INSTRUCTIONS;
 
   if (settings.enableMarketData && marketDataContext) {
     prompt += marketDataContext;
@@ -391,7 +450,7 @@ ${settings.customInstructions.trim()}`;
 - Tu ne peux pas exécuter de trades
 - Tu ne garantis pas les performances futures
 - Tu recommandes toujours de consulter un professionnel pour les décisions importantes
-- IMPORTANT: Quand tu donnes des taux de change, utilise UNIQUEMENT les données réelles fournies ci-dessus. Ne jamais inventer de taux.`;
+- IMPORTANT: Quand tu donnes des taux/prix, utilise UNIQUEMENT les données réelles fournies. Ne jamais inventer de données.`;
 
   return prompt;
 }
@@ -416,6 +475,7 @@ serve(async (req) => {
       enableFunctionCalls: settings?.enableFunctionCalls ?? true,
       customInstructions: settings?.customInstructions || "",
       fxDisplayMode: settings?.fxDisplayMode || "card",
+      assetClass: settings?.assetClass || "forex",
     };
 
     // Fetch real market data if enabled

@@ -1,13 +1,14 @@
 import { FXExtractionData } from "@/types/chat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownRight, ArrowUpRight, Calendar, DollarSign, TrendingDown, TrendingUp, Target, Percent } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Calendar, DollarSign, TrendingDown, TrendingUp, Target, Percent, Shield } from "lucide-react";
 
 interface FXDataCardProps {
   data: FXExtractionData;
+  isForex?: boolean;
 }
 
-export function FXDataCard({ data }: FXDataCardProps) {
+export function FXDataCard({ data, isForex = true }: FXDataCardProps) {
   const formatAmount = (amount: number | null) => {
     if (amount === null) return "—";
     if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
@@ -26,12 +27,20 @@ export function FXDataCard({ data }: FXDataCardProps) {
     return `${num.toFixed(2)} an${num > 1 ? "s" : ""}`;
   };
 
+  const getHedgeDirectionLabel = (hedgeDir: "upside" | "downside" | null) => {
+    if (!hedgeDir) return null;
+    if (hedgeDir === "upside") {
+      return isForex ? "Protection hausse" : "Protection contre hausse prix";
+    }
+    return isForex ? "Protection baisse" : "Protection contre baisse prix";
+  };
+
   return (
     <Card className="mt-4 bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <DollarSign className="h-5 w-5 text-primary" />
-          Récapitulatif de la Stratégie FX
+          {isForex ? "Récapitulatif de la Stratégie FX" : "Récapitulatif de la Stratégie Commodities"}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -90,17 +99,22 @@ export function FXDataCard({ data }: FXDataCardProps) {
             </div>
           )}
 
-          {/* Hedge Direction */}
+          {/* Hedge Direction - Always show with emphasis */}
           {data.hedgeDirection !== null && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-              {data.hedgeDirection === "upside" ? (
-                <TrendingUp className="h-4 w-4 text-green-500" />
-              ) : (
-                <TrendingDown className="h-4 w-4 text-red-500" />
-              )}
-              <div>
-                <p className="text-xs text-muted-foreground">Protection</p>
-                <p className="font-medium capitalize">{data.hedgeDirection}</p>
+            <div className={`flex items-center gap-2 p-3 rounded-lg col-span-2 ${
+              data.hedgeDirection === "upside" ? "bg-green-500/10 border border-green-500/30" : "bg-red-500/10 border border-red-500/30"
+            }`}>
+              <Shield className={`h-5 w-5 ${data.hedgeDirection === "upside" ? "text-green-500" : "text-red-500"}`} />
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">Direction de couverture</p>
+                <div className="flex items-center gap-2">
+                  {data.hedgeDirection === "upside" ? (
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                  )}
+                  <p className="font-medium">{getHedgeDirectionLabel(data.hedgeDirection)}</p>
+                </div>
               </div>
             </div>
           )}
@@ -109,7 +123,7 @@ export function FXDataCard({ data }: FXDataCardProps) {
         {/* Pair Display */}
         <div className="pt-2 border-t border-border/50">
           <p className="text-sm text-center text-muted-foreground">
-            Paire: <span className="font-semibold text-foreground">{data.currency}/{data.baseCurrency}</span>
+            {isForex ? "Paire" : "Commodity"}: <span className="font-semibold text-foreground">{data.currency}/{data.baseCurrency}</span>
           </p>
         </div>
       </CardContent>

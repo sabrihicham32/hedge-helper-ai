@@ -94,7 +94,7 @@ const Index = () => {
           ) : (
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((message, index) => (
-                <ChatMessage key={index} message={message} fxDisplayMode={settings.fxDisplayMode} />
+                <ChatMessage key={index} message={message} fxDisplayMode={settings.fxDisplayMode} assetClass={settings.assetClass} />
               ))}
               {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <TypingIndicator />
