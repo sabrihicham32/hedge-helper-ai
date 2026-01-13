@@ -24,12 +24,15 @@ export type ResponseStyle = "concise" | "detailed" | "technical";
 
 export type FXDisplayMode = "card" | "json";
 
+export type AssetClass = "forex" | "commodities";
+
 export interface ChatSettings {
   responseStyle: ResponseStyle;
   enableMarketData: boolean;
   enableFunctionCalls: boolean;
   customInstructions: string;
   fxDisplayMode: FXDisplayMode;
+  assetClass: AssetClass;
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -38,6 +41,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   enableFunctionCalls: true,
   customInstructions: "",
   fxDisplayMode: "card",
+  assetClass: "forex",
 };
 
 // FX Strategy Extraction Data

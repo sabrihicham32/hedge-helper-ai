@@ -1,9 +1,9 @@
-import { Settings, Database, Zap, MessageSquare, LayoutGrid, Code } from "lucide-react";
+import { Settings, Database, Zap, MessageSquare, LayoutGrid, Code, TrendingUp, Wheat } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ChatSettings, ResponseStyle, FXDisplayMode } from "@/types/chat";
+import { ChatSettings, ResponseStyle, FXDisplayMode, AssetClass } from "@/types/chat";
 import {
   Sheet,
   SheetContent,
@@ -28,6 +28,11 @@ const RESPONSE_STYLES: { value: ResponseStyle; label: string; description: strin
 const FX_DISPLAY_MODES: { value: FXDisplayMode; label: string; description: string; icon: typeof LayoutGrid }[] = [
   { value: "card", label: "Carte visuelle", description: "Affichage graphique structuré", icon: LayoutGrid },
   { value: "json", label: "JSON", description: "Format brut pour développeurs", icon: Code },
+];
+
+const ASSET_CLASSES: { value: AssetClass; label: string; description: string; icon: typeof TrendingUp }[] = [
+  { value: "forex", label: "Forex", description: "Devises et change", icon: TrendingUp },
+  { value: "commodities", label: "Commodities", description: "Matières premières", icon: Wheat },
 ];
 
 export function ChatSettingsPanel({ settings, onSettingsChange }: ChatSettingsPanelProps) {
@@ -55,6 +60,37 @@ export function ChatSettingsPanel({ settings, onSettingsChange }: ChatSettingsPa
         </SheetHeader>
 
         <div className="space-y-6 mt-6">
+          {/* Asset Class Selection */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <Label className="text-sm font-medium">Classe d'actifs</Label>
+            </div>
+            <RadioGroup
+              value={settings.assetClass}
+              onValueChange={(value) => updateSetting("assetClass", value as AssetClass)}
+              className="grid grid-cols-2 gap-2"
+            >
+              {ASSET_CLASSES.map((asset) => (
+                <div
+                  key={asset.value}
+                  className={`flex items-center space-x-3 rounded-lg border p-3 hover:bg-secondary/50 transition-colors ${
+                    settings.assetClass === asset.value ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <RadioGroupItem value={asset.value} id={`asset-${asset.value}`} />
+                  <div className="flex-1">
+                    <Label htmlFor={`asset-${asset.value}`} className="font-medium cursor-pointer flex items-center gap-2">
+                      <asset.icon className="h-4 w-4" />
+                      {asset.label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">{asset.description}</p>
+                  </div>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
           {/* Response Style */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">

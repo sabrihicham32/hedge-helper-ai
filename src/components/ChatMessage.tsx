@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Message, parseFXExtractionFromResponse, FXDisplayMode } from "@/types/chat";
+import { Message, parseFXExtractionFromResponse, FXDisplayMode, AssetClass } from "@/types/chat";
 import { Bot, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { FXDataCard } from "./FXDataCard";
@@ -9,9 +9,10 @@ import { useMemo } from "react";
 interface ChatMessageProps {
   message: Message;
   fxDisplayMode?: FXDisplayMode;
+  assetClass?: AssetClass;
 }
 
-export function ChatMessage({ message, fxDisplayMode = "card" }: ChatMessageProps) {
+export function ChatMessage({ message, fxDisplayMode = "card", assetClass = "forex" }: ChatMessageProps) {
   const isUser = message.role === "user";
 
   // Parse FX data from assistant messages
@@ -86,7 +87,7 @@ export function ChatMessage({ message, fxDisplayMode = "card" }: ChatMessageProp
             {/* Display FX Data based on display mode setting */}
             {fxData && (
               fxDisplayMode === "card" 
-                ? <FXDataCard data={fxData} />
+                ? <FXDataCard data={fxData} isForex={assetClass === "forex"} />
                 : <FXDataJSON data={fxData} />
             )}
           </div>
