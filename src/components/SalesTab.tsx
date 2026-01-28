@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { parseBloombergChat } from "@/lib/bloombergParser";
 import { generateTradePDF } from "@/lib/pdfGenerator";
 import { BloombergTradeData, PRODUCT_TYPE_LABELS } from "@/types/bloomberg";
-import { FileText, Sparkles, Download, RefreshCw, Building2, User, Mail, ArrowUpDown, TrendingUp, TrendingDown, CircleDollarSign } from "lucide-react";
+import { FileText, Sparkles, Download, RefreshCw, Building2, ArrowUpDown, TrendingUp, TrendingDown, CircleDollarSign, Settings } from "lucide-react";
 import { toast } from "sonner";
+import { SalesSettingsPanel, SalesSettings, loadSalesSettings } from "./SalesSettingsPanel";
 
 const STATUS_COLORS = {
   done: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -29,9 +30,12 @@ export function SalesTab() {
   const [chatInput, setChatInput] = useState("");
   const [parsedData, setParsedData] = useState<BloombergTradeData | null>(null);
   const [counterparty, setCounterparty] = useState("");
-  const [salesName, setSalesName] = useState("");
-  const [salesEmail, setSalesEmail] = useState("");
-  const [bankName, setBankName] = useState("");
+  const [salesSettings, setSalesSettings] = useState<SalesSettings>(loadSalesSettings);
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    setSalesSettings(loadSalesSettings());
+  }, []);
 
   const handleParse = () => {
     if (!chatInput.trim()) {
@@ -55,9 +59,7 @@ export function SalesTab() {
     
     generateTradePDF(parsedData, {
       counterparty,
-      salesName: salesName || "Sales Desk",
-      salesEmail: salesEmail || "sales@bank.com",
-      bankName: bankName || "TRADE RECAP",
+      settings: salesSettings,
       date: new Date().toLocaleDateString("fr-FR"),
     });
     
@@ -74,14 +76,20 @@ export function SalesTab() {
     <div className="flex flex-col h-full p-6 overflow-y-auto">
       <div className="max-w-4xl mx-auto w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
-            <FileText className="h-5 w-5 text-accent" />
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
+              <FileText className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <h1 className="font-semibold text-foreground">Bloomberg Chat Parser</h1>
+              <p className="text-xs text-muted-foreground">Générez des récapitulatifs PDF à partir de vos chats</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-semibold text-foreground">Bloomberg Chat Parser</h1>
-            <p className="text-xs text-muted-foreground">Générez des récapitulatifs PDF à partir de vos chats</p>
-          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)} className="gap-2">
+            <Settings className="h-4 w-4" />
+            Configuration
+          </Button>
         </div>
 
         {/* Input Section */}
@@ -250,53 +258,33 @@ export function SalesTab() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-xs">
-                    <Building2 className="h-3 w-3" />
-                    Contrepartie (client) *
-                  </Label>
-                  <Input
-                    placeholder="Nom de la banque ou du broker"
-                    value={counterparty}
-                    onChange={(e) => setCounterparty(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-xs">
-                    <Building2 className="h-3 w-3" />
-                    Votre établissement
-                  </Label>
-                  <Input
-                    placeholder="Votre banque"
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-xs">
-                    <User className="h-3 w-3" />
-                    Nom du Sales
-                  </Label>
-                  <Input
-                    placeholder="Votre nom"
-                    value={salesName}
-                    onChange={(e) => setSalesName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-xs">
-                    <Mail className="h-3 w-3" />
-                    Email
-                  </Label>
-                  <Input
-                    type="email"
-                    placeholder="votre.email@bank.com"
-                    value={salesEmail}
-                    onChange={(e) => setSalesEmail(e.target.value)}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-xs">
+                  <Building2 className="h-3 w-3" />
+                  Contrepartie (client) *
+                </Label>
+                <Input
+                  placeholder="Nom de la banque ou du broker"
+                  value={counterparty}
+                  onChange={(e) => setCounterparty(e.target.value)}
+                />
               </div>
+
+              {/* Show configured settings summary */}
+              {(salesSettings.bankName || salesSettings.salesName) && (
+                <div className="p-3 rounded-lg bg-secondary/50 text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground mb-1">Informations configurées</div>
+                  {salesSettings.bankName && <div>Établissement: {salesSettings.bankName}</div>}
+                  {salesSettings.salesName && <div>Sales: {salesSettings.salesName}</div>}
+                  {salesSettings.logoUrl && <div className="text-green-400">✓ Logo configuré</div>}
+                </div>
+              )}
+
+              {!salesSettings.bankName && !salesSettings.salesName && (
+                <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-400">
+                  Configurez vos informations via le bouton "Configuration" pour un PDF complet.
+                </div>
+              )}
               
               <Button onClick={handleGeneratePDF} className="w-full gap-2 bg-gradient-to-r from-primary to-accent hover:opacity-90">
                 <Download className="h-4 w-4" />
@@ -306,6 +294,14 @@ export function SalesTab() {
           </Card>
         )}
       </div>
+
+      {/* Settings Panel */}
+      <SalesSettingsPanel
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={setSalesSettings}
+        currentSettings={salesSettings}
+      />
     </div>
   );
 }
